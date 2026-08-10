@@ -1,0 +1,280 @@
+import { useState, useEffect, useMemo } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import { brandService, productService, fileService } from '../services/supabaseService';
+import ProductCard from '../components/ProductCard';
+import Breadcrumb from '../components/Breadcrumb';
+import { FiGrid, FiList } from 'react-icons/fi';
+
+const BrandDetail = () => {
+  const { slug } = useParams();
+  const [brand, setBrand] = useState(null);
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  
+  const [viewMode, setViewMode] = useState('grid');
+  const [sortBy, setSortBy] = useState('featured');
+  const [selectedCategory, setSelectedCategory] = useState('all');
+
+  const filteredProducts = useMemo(() => {
+    let filtered = [...products];
+
+    if (selectedCategory !== 'all') {
+      filtered = filtered.filter(p => (p.category?.name || p.categories?.name || p.categoryName) === selectedCategory);
+    }
+
+    switch (sortBy) {
+      case 'price-low':
+        filtered.sort((a, b) => (parseFloat(a.price) || 0) - (parseFloat(b.price) || 0));
+        break;
+      case 'price-high':
+        filtered.sort((a, b) => (parseFloat(b.price) || 0) - (parseFloat(a.price) || 0));
+        break;
+      case 'rating':
+        filtered.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+        break;
+      case 'newest':
+        filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        break;
+      default:
+        break;
+    }
+
+    return filtered;
+  }, [products, sortBy, selectedCategory]);
+
+  const brandCategories = ['all', ...new Set(products.map(p => p.category?.name || p.categories?.name || p.categoryName).filter(Boolean))];
+
+  useEffect(() => {
+    let isMounted = true;
+    let timeoutId = null;
+
+    const loadBrandData = async () => {
+      setLoading(true);
+      
+      try {
+        // Fetch only active products
+        const [brandsResult, productsResult] = await Promise.all([
+          brandService.getBrands().catch(err => {
+            console.error('Brands error:', err);
+            return { data: null, error: err };
+          }),
+          productService.getActiveProducts().catch(err => {
+            console.error('Products error:', err);
+            return { data: null, error: err };
+          })
+        ]);
+
+        // Only update state if component is still mounted
+        if (!isMounted) return;
+
+        let foundBrand = null;
+        if (brandsResult?.error) {
+          console.error('Brands fetch error:', brandsResult.error);
+          setBrand(null);
+        } else if (brandsResult?.data) {
+          foundBrand = brandsResult.data.find(b => b.slug === slug) || null;
+          setBrand(foundBrand);
+        }
+
+        if (productsResult?.error) {
+          console.error('Products fetch error:', productsResult.error);
+          setProducts([]);
+        } else if (productsResult?.data) {
+          const brandProducts = productsResult.data.filter(p => {
+            // Only show active products
+            if (!p.is_active) return false;
+            const nestedSlug = (p.brand?.slug || p.brands?.slug);
+            const nestedId = (p.brand?.id || p.brands?.id);
+            return (
+              nestedSlug === slug ||
+              (foundBrand?.id && (p.brand_id === foundBrand.id || nestedId === foundBrand.id))
+            );
+          });
+          setProducts(brandProducts);
+        } else {
+          setProducts([]);
+        }
+      } catch (error) {
+        console.error('Error loading brand data:', error);
+        if (isMounted) {
+          setProducts([]);
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    // Add timeout as safety net
+    timeoutId = setTimeout(() => {
+      if (isMounted) {
+        setLoading(false);
+      }
+    }, 10000);
+
+    loadBrandData().finally(() => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    });
+
+    // Cleanup function
+    return () => {
+      isMounted = false;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
+  }, [slug]);
+
+  const isLoading = loading;
+  const brandNotFound = !loading && !brand;
+
+  // moved above to keep hooks order consistent
+
+  if (isLoading) {
+    return (
+      <div className="container mx-auto px-4 py-16">
+        <div className="flex items-center justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (brandNotFound) {
+    return (
+      <div className="container mx-auto px-4 py-16 text-center">
+        <h1 className="text-3xl font-bold text-gray-900 mb-4">Brand Not Found</h1>
+        <Link to="/brands" className="text-primary-600 hover:text-primary-700">
+          ← Back to Brands
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="container mx-auto px-4 py-8">
+        <Breadcrumb
+          items={[
+            { label: 'Brands', path: '/brands' },
+            { label: brand.name }
+          ]}
+        />
+
+        {/* Brand Banner - Above Products */}
+        {brand.slider_image_url && (
+          <section className="my-8 flex justify-center">
+            <div className="rounded-2xl overflow-hidden shadow-xl" style={{ width: '1184px', height: '200px', maxWidth: '100%' }}>
+              {(() => {
+                const raw = brand.slider_image_url || brand.sliderImageUrl || '';
+                const src = raw
+                  ? (String(raw).startsWith('http') || String(raw).includes('/storage/v1/object/public/')
+                      ? raw
+                      : fileService.getPublicUrl('brand-heroes', raw))
+                  : '';
+                return src ? (
+                  <img
+                    src={src}
+                    alt={`${brand.name} banner`}
+                    className="w-full h-full"
+                    style={{ width: '1184px', height: '200px', maxWidth: '100%', objectFit: 'fill', objectPosition: 'center' }}
+                  />
+                ) : null;
+              })()}
+            </div>
+          </section>
+        )}
+
+        {/* Products Section */}
+        <section id="products">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+            <div>
+              <h2 className="text-3xl font-bold text-gray-900">
+                {brand.name} Products
+              </h2>
+            </div>
+
+            <div className="flex flex-wrap gap-4 items-center">
+              {/* Category Filter */}
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              >
+                {brandCategories.map(cat => (
+                  <option key={cat} value={cat}>
+                    {cat === 'all' ? 'All Categories' : cat}
+                  </option>
+                ))}
+              </select>
+
+              {/* Sort */}
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              >
+                <option value="featured">Featured</option>
+                <option value="newest">Newest</option>
+                <option value="price-low">Price: Low to High</option>
+                <option value="price-high">Price: High to Low</option>
+                <option value="rating">Highest Rated</option>
+              </select>
+
+              {/* View Mode */}
+              <div className="flex gap-2 border border-gray-300 rounded-lg p-1">
+                <button
+                  onClick={() => setViewMode('grid')}
+                  className={`p-2 rounded ${
+                    viewMode === 'grid'
+                      ? 'bg-primary-600 text-white'
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                  aria-label="Grid view"
+                >
+                  <FiGrid size={20} />
+                </button>
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`p-2 rounded ${
+                    viewMode === 'list'
+                      ? 'bg-primary-600 text-white'
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                  aria-label="List view"
+                >
+                  <FiList size={20} />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Products Grid/List */}
+          {filteredProducts.length > 0 ? (
+            <div
+              className={
+                viewMode === 'grid'
+                  ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6'
+                  : 'flex flex-col gap-4'
+              }
+            >
+              {filteredProducts.map(product => (
+                <ProductCard key={product.id} product={product} />
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-16">
+              <p className="text-gray-500 text-lg">No products found in this category.</p>
+            </div>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+};
+
+export default BrandDetail;
+
