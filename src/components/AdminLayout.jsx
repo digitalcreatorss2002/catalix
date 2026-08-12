@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { FiHome, FiImage, FiLayers, FiLogOut, FiMenu, FiPackage, FiSettings, FiShoppingBag, FiTag, FiUsers, FiX } from 'react-icons/fi';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { jsonStorage, safeStorage } from '../utils/safeStorage';
 
@@ -61,22 +61,8 @@ const AdminLayout = ({ children }) => {
   }
 
   if (!isAdmin) {
-    console.warn('🚫 [AdminLayout] Access denied:', {
-      hasAdminUser: !!adminUser,
-      isAdminFlag: safeStorage.getItem('isAdmin'),
-      userEmail: user?.email
-    });
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="card p-8 max-w-md text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Access Denied</h2>
-          <p className="text-gray-600 mb-6">You don't have permission to access the admin panel.</p>
-          <Link to="/" className="btn-primary">
-            Go to Homepage
-          </Link>
-        </div>
-      </div>
-    );
+    console.warn('🚫 [AdminLayout] Access denied, redirecting to login');
+    return <Navigate to="/admin/login" replace />;
   }
 
   const menuItems = [
