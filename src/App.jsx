@@ -1,4 +1,4 @@
-import { Route, BrowserRouter as Router, Routes, useLocation } from 'react-router-dom';
+import { Route, BrowserRouter as Router, Routes, useLocation, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
 import { NotificationProvider } from './context/NotificationContext';
@@ -51,7 +51,8 @@ import Enquiries from './pages/admin/Enquiries';
 
 function AppContent() {
   const location = useLocation();
-  const isAdminRoute = location.pathname.startsWith('/admin');
+  const isSubdomainAdmin = typeof window !== 'undefined' && window.location.hostname.toLowerCase().startsWith('admin');
+  const isAdminRoute = location.pathname.startsWith('/admin') || isSubdomainAdmin;
 
   return (
     <NotificationProvider>
@@ -64,7 +65,7 @@ function AppContent() {
               <main className="flex-grow">
                 <Routes>
                   {/* Public Routes */}
-                  <Route path="/" element={<Landing />} />
+                  <Route path="/" element={isSubdomainAdmin ? <Navigate to="/admin" replace /> : <Landing />} />
                   <Route path="/home-old" element={<Home />} />
                   <Route path="/products" element={<Products />} />
                   <Route path="/products/:slug" element={<ProductDetail />} />
